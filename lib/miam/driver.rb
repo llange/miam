@@ -457,8 +457,13 @@ class Miam::Driver
 
   def account_id
     if not @account_id
-        resp = @iam.list_users({max_items: 1})
-        arn = resp.users[0].arn
+        begin
+            resp = @iam.list_users({max_items: 1})
+            arn = resp.users[0].arn
+        rescue
+            resp = @iam.list_policies({max_items: 1})
+            arn = resp.policies[0].arn
+        end
         @account_id = arn.match('^arn:aws:iam::([0-9]{12}):.*$')[1]
     end
     @account_id
