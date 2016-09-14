@@ -377,12 +377,12 @@ class Miam::Driver
     end
   end
 
-  def delete_managed_policy(policy_name)
+  def delete_managed_policy(policy_name, policy_path)
     log(:info, "Delete ManagedPolicy `#{policy_name}`", :color => :red)
 
     unless_dry_run do
       policy_versions = @iam.list_policy_versions(
-        :policy_arn => policy_arn(policy_name),
+        :policy_arn => policy_arn(policy_name, policy_path),
         :max_items => MAX_POLICY_VERSIONS
       )
 
@@ -390,24 +390,24 @@ class Miam::Driver
         pv.is_default_version
       }.each {|pv|
         @iam.delete_policy_version(
-          :policy_arn => policy_arn(policy_name),
+          :policy_arn => policy_arn(policy_name, policy_path),
           :version_id => pv.version_id
         )
       }
 
       @iam.delete_policy(
-        :policy_arn => policy_arn(policy_name)
+        :policy_arn => policy_arn(policy_name, policy_path)
       )
     end
   end
 
-  def update_managed_policy(policy_name, policy_document, old_policy_document)
+  def update_managed_policy(policy_name, policy_path, policy_document, old_policy_document)
     log(:info, "Update ManagedPolicy `#{policy_name}`", :color => :green)
     log(:info, Miam::Utils.diff(old_policy_document, policy_document, :color => @options[:color]), :color => false)
 
     unless_dry_run do
       policy_versions = @iam.list_policy_versions(
-        :policy_arn => policy_arn(policy_name),
+        :policy_arn => policy_arn(policy_name, policy_path),
         :max_items => MAX_POLICY_VERSIONS
       )
 
@@ -417,13 +417,13 @@ class Miam::Driver
         }.sort_by {|pv| pv.version_id[1..-1].to_i }.first
 
         @iam.delete_policy_version(
-          :policy_arn => policy_arn(policy_name),
+          :policy_arn => policy_arn(policy_name, policy_path),
           :version_id => delete_policy_version.version_id
         )
       end
 
       @iam.create_policy_version(
-        :policy_arn => policy_arn(policy_name),
+        :policy_arn => policy_arn(policy_name, policy_path),
         :policy_document => encode_document(policy_document),
         set_as_default: true
       )
@@ -456,20 +456,11 @@ class Miam::Driver
   end
 
   def account_id
-    if not @account_id
-        begin
-            resp = @iam.list_users({max_items: 1})
-            arn = resp.users[0].arn
-        rescue
-            resp = @iam.list_policies({max_items: 1})
-            arn = resp.policies[0].arn
-        end
-        @account_id = arn.match('^arn:aws:iam::([0-9]{12}):.*$')[1]
-    end
-    @account_id
+    # https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html
+    @account_id ||= @iam.get_user.user.arn.split(':').fetch(4)
   end
 
-  def policy_arn(policy_name)
-    "arn:aws:iam::#{account_id}:policy/#{policy_name}"
+  def policy_arn(policy_name, policy_path)
+    File.join("arn:aws:iam::#{account_id}:policy", policy_path, policy_name)
   end
 end
